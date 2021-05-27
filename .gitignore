@@ -1,5 +1,5 @@
 # Ignored directories
-monai_testing/Data/
+Data/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
