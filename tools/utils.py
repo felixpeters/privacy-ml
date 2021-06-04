@@ -2,7 +2,7 @@ def train(batch_size, epochs, model,
           torch_ref, optim, loss_function, 
           train_data, train_labels, test_data, 
           test_labels, input_shape, device):
-    """ A generic training function without the use of data loaders.
+    """ A generic training function without the use of data loaders and test cycle after every epoch.
     
     Arguments:
         batch_size (int): Size of the mini batches. Length of data should be close to a multiple of this since the rest is
@@ -42,7 +42,11 @@ def train(batch_size, epochs, model,
             
             loss = loss_function(output, batch_labels[i].to(device))
             loss_item = loss.item()
-            loss_value = loss_item.get_copy(reason="To evaluate training progress", request_block=True, timeout_secs=5)
+            
+            if model.is_local:
+                loss_value = loss_item
+            else:
+                loss_value = loss_item.get_copy(reason="To evaluate training progress", request_block=True, timeout_secs=5)
             print(f'Training Loss: {loss_value}')
         
             loss.backward()
@@ -51,21 +55,35 @@ def train(batch_size, epochs, model,
         test(model, loss_function, torch_ref, test_data, test_labels, device)
                    
             
-def test(model, loss_function, remote_torch, data, labels, device):
+def test(model, loss_function, torch_ref, data, labels, device):
+    """ A generic training function without batching.
+    
+     Arguments:
+        model (object): Remote or local model.
+        torch_ref (object): Remote or local torch reference.
+        loss_function (object): Remote or local loss function.
+        data (torch.Tensor): A Tensor or TensorPointer conatining the test data.
+        labels (torch.Tensor): A Tensor or TensorPointer containing the test labels.
+        device (torch.device): The device to train on.
+    """
     model.eval()
     
     data = data.to(device)
     labels = labels.to(device)
     length = len(data)
     
-    with remote_torch.no_grad():
+    with torch_ref.no_grad():
         output = model(data)
         test_loss = loss_function(output, labels)
         prediction = output.argmax(dim=1)
         total = prediction.eq(labels).sum().item()
         
     acc_ptr = total / length
-    acc = acc_ptr.get(request_block=True, reason='Gimme!')
-    loss = test_loss.get(request_block=True, reason='Gimme!')
+    if model.is_local:
+        acc = acc_ptr
+        loss = test_loss
+    else:
+        acc = acc_ptr.get(reason="To evaluate training progress", request_block=True, timeout_secs=5)
+        loss = test_loss.get(reason="To evaluate training progress", request_block=True, timeout_secs=5)
     
     print(f'Test Accuracy: {acc} --- Test Loss: {loss}')
