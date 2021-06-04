@@ -70,7 +70,7 @@ class Loader():
             row = df.loc[df['IXI_ID'] == ixi_id]
             if not row.empty:
                 data.append(os.sep.join(['Data', 'IXI-T1', i]))
-                labels.append(row.iat[0, 1] - 1) # Sex labels are 1/2 but need to be 0/1
+                labels.append(int(row.iat[0, 1] - 1)) # Sex labels are 1/2 but need to be 0/1
 
         data, labels = data[:int(len(data) * sample_size)], labels[:int(len(data) * sample_size)]
         
@@ -139,9 +139,10 @@ class Loader():
 
         for i in range(num_class):
             data.extend(image_files[i])
-            labels.extend([i] * num_each[i])
+            labels.extend([int(i)] * num_each[i])
             
         if shuffle:
+            np.random.seed(42)
             indicies = np.arange(len(data))
             np.random.shuffle(indicies)
             
@@ -166,7 +167,7 @@ class Loader():
 class IXIT1Dataset(torch.utils.data.Dataset):
     """IXI-T1 Dataset
     
-    Consists of ~566 images of 3D Brain MRI scans and labels (0) for male and (1) for female.
+    Consists of ~566 images of 3D Brain MRI scans and labels: (0) for male and (1) for female.
 
     Functions:
         as_tensor(): Will return the dataset as a two torch tensors. Data and Labels.
@@ -181,8 +182,8 @@ class IXIT1Dataset(torch.utils.data.Dataset):
         return self.ds[index]
 
     def as_tensor(self):
-        data = torch.Tensor([data[0] for data in self.ds])
-        labels = torch.Tensor([data[1] for data in self.ds])
+        data = torch.tensor([data[0] for data in self.ds])
+        labels = torch.tensor([data[1] for data in self.ds], dtype=torch.long)
         return data, labels
     
 
@@ -209,7 +210,31 @@ class MedNISTDataset(torch.utils.data.Dataset):
     
     def as_tensor(self):
         data = [self.transforms(self.data[i]) for i in range(len(self.data))]
-        return torch.Tensor(data), torch.Tensor(self.labels)
+        return torch.tensor(data), torch.tensor(self.labels, dtype=torch.long)
+
+    
+class PointerDataset(torch.utils.data.Dataset):
+    """ Dataset of TensorPointers for use with a local DataLoader. 
+    DO NOT USE! DataLoader only manages to work with batch_size of 1 when loading TensorPointers...
+    
+    Arguments:
+        data_pointer (TensorPointer): A TensorPointer to the data in a duet store.
+        labels_pointer (TensorPointer): A TensorPointer to the labels in a duet store.
+        transforms (Compose): A remote torchvision instance of Compose, containing a list of transforms.
+    """
+    def __init__(self, data_pointer, labels_pointer, transforms: object = None):
+        self.data_pointer = data_pointer
+        self.labels_pointer = labels_pointer
+        self.transforms = transforms
+        
+    def __len__(self):
+        return len(self.data_pointer)
+    
+    def __getitem__(self, index):
+        if self.transforms is not None:
+            return self.transforms(self.data_pointer[index]), self.labels_pointer[index].long()
+        else:
+            return self.data_pointer[index], self.labels_pointer[index]
     
     
 def _split(data, labels, test_size, val_size):
