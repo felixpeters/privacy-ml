@@ -92,7 +92,7 @@ class Loader():
     @staticmethod
     def load_MedNIST(download: bool = False, train_transforms: object = mednist_train_transforms, 
                    test_transforms: object = mednist_test_transforms, test_size: float = 0.2, 
-                   val_size: float = 0.0, sample_size: float = 0.01, shuffle: bool = True):
+                   val_size: float = 0.0, sample_size: float = 0.01, shuffle: bool = True, val_only=False):
         """Loads the MedNIST 2D image dataset.
         
         Consists of ~60.000 2D images from 6 classes: AbdomenCT, BreastMRI, ChestCT, CXR, Hand, HeadCT.
