@@ -1,7 +1,10 @@
-def train(batch_size, epochs, model, 
+import time
+import numpy as np
+
+def train(batch_size, epochs, delta, model, 
           torch_ref, optim, loss_function, 
           train_data, train_labels, test_data, 
-          test_labels, input_shape, device):
+          test_labels, input_shape, device, privacy_engine=None):
     """ A generic training function without the use of data loaders and test cycle after every epoch.
     
     Arguments:
@@ -18,7 +21,19 @@ def train(batch_size, epochs, model,
         test_labels (torch.Tensor): A Tensor or TensorPointer containing the test labels.
         input_shape (list): A list specifying the shape of one data point (result of train_data[0].shape).
         device (torch.device): The device to train on.
+        privacy_engine (object): An instance of the Differential Privacy Engine from Opacus or a Pointer to a remote engine.
     """
+    # Variables to track
+    losses = [] # Training losses per batch per epoch
+    test_accs = []
+    test_losses = [] # Test losses per epoch
+    epsilons = [] 
+    alphas = []
+    epoch_times = [] # Training times for each epoch
+    best_acc_loss = (0, 0)
+    best_model = None
+    
+    # Divide dataset into batches (sadly remote DataLoaders aren't yet a thing in pysyft)
     length = len(train_data)
     
     if length % batch_size != 0:
@@ -31,29 +46,75 @@ def train(batch_size, epochs, model,
     batch_data = cut_data.view(shape)
     batch_labels = cut_labels.view(-1, batch_size)
     
+    # Prepare indices for randomization of order for each epoch
+    indices = np.arange(int(length / batch_size))
+    
     for epoch in range(epochs):
+        epoch_start = time.time()
+        epoch_loss = []
+        
         model.train()
         
+        np.random.shuffle(indices)
+        
         print(f'###### Epoch {epoch + 1} ######')
-        for i in range(int(length / batch_size)):
+        for i in indices:
             optim.zero_grad()
             
-            output = model(batch_data[i].to(device))
+            output = model(batch_data[int(i)].to(device))
             
-            loss = loss_function(output, batch_labels[i].to(device))
+            loss = loss_function(output, batch_labels[int(i)].to(device))
             loss_item = loss.item()
             
             if model.is_local:
                 loss_value = loss_item
             else:
-                loss_value = loss_item.get_copy(reason="To evaluate training progress", request_block=True, timeout_secs=5)
+                loss_value = loss_item.get(reason="To evaluate training progress", request_block=True, timeout_secs=5)
             print(f'Training Loss: {loss_value}')
+            epoch_loss.append(loss_value)
         
             loss.backward()
             optim.step()
         
-        test(model, loss_function, torch_ref, test_data, test_labels, device)
-                   
+        # Checking our privacy budget
+        if privacy_engine is not None:
+            epsilon_tuple = privacy_engine.get_privacy_spent(delta)
+            epsilon_ptr = epsilon_tuple[0].resolve_pointer_type()
+            best_alpha_ptr = epsilon_tuple[1].resolve_pointer_type()
+
+            epsilon = epsilon_ptr.get(
+                reason="So we dont go over it",
+                request_block=True,
+                timeout_secs=5
+            )
+            best_alpha = best_alpha_ptr.get(
+                reason="So we dont go over it",
+                request_block=True,
+                timeout_secs=5
+            )
+            if epsilon is None:
+                epsilon = float("-inf")
+            if best_alpha is None:
+                best_alpha = float("-inf")
+            print(
+                f"(ε = {epsilon:.2f}, δ = {delta}) for α = {best_alpha}"
+            )
+            epsilons.append(epsilon)
+            alphas.append(best_alpha)
+    
+        test_acc, test_loss = test(model, loss_function, torch_ref, test_data, test_labels, device)
+        print(f'Test Accuracy: {test_acc} ---- Test Loss: {test_loss}')
+        
+        epoch_end = time.time()
+        print(f"Epoch time: {float(epoch_end - epoch_start)} seconds")
+        
+        losses.append(epoch_loss)
+        epoch_times.append(float(epoch_end - epoch_start))
+        test_accs.append(test_acc)
+        test_losses.append(test_loss)
+        
+    return losses, test_accs, test_losses, epsilons, alphas, epoch_times
+
             
 def test(model, loss_function, torch_ref, data, labels, device):
     """ A generic training function without batching.
@@ -81,9 +142,9 @@ def test(model, loss_function, torch_ref, data, labels, device):
     acc_ptr = total / length
     if model.is_local:
         acc = acc_ptr
-        loss = test_loss
+        loss = test_loss.item()
     else:
         acc = acc_ptr.get(reason="To evaluate training progress", request_block=True, timeout_secs=5)
-        loss = test_loss.get(reason="To evaluate training progress", request_block=True, timeout_secs=5)
-    
-    print(f'Test Accuracy: {acc} --- Test Loss: {loss}')
+        loss = test_loss.item().get(reason="To evaluate training progress", request_block=True, timeout_secs=5)
+
+    return acc, loss
