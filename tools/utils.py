@@ -70,7 +70,7 @@ def train(batch_size, epochs, delta, model,
                 loss_value = loss_item
             else:
                 loss_value = loss_item.get(reason="To evaluate training progress", request_block=True, timeout_secs=5)
-            print(f'Training Loss: {loss_value}')
+            #print(f'Training Loss: {loss_value}')
             epoch_loss.append(loss_value)
         
             loss.backward()
@@ -79,19 +79,24 @@ def train(batch_size, epochs, delta, model,
         # Checking our privacy budget
         if privacy_engine is not None:
             epsilon_tuple = privacy_engine.get_privacy_spent(delta)
-            epsilon_ptr = epsilon_tuple[0].resolve_pointer_type()
-            best_alpha_ptr = epsilon_tuple[1].resolve_pointer_type()
+            if model.is_local:
+                epsilon = epsilon_tuple[0]
+                best_alpha = epsilon_tuple[1]
+            else:
+                epsilon_ptr = epsilon_tuple[0].resolve_pointer_type()
+                best_alpha_ptr = epsilon_tuple[1].resolve_pointer_type()
 
-            epsilon = epsilon_ptr.get(
-                reason="So we dont go over it",
-                request_block=True,
-                timeout_secs=5
-            )
-            best_alpha = best_alpha_ptr.get(
-                reason="So we dont go over it",
-                request_block=True,
-                timeout_secs=5
-            )
+                epsilon = epsilon_ptr.get(
+                    reason="So we dont go over it",
+                    request_block=True,
+                    timeout_secs=5
+                )
+                best_alpha = best_alpha_ptr.get(
+                    reason="So we dont go over it",
+                    request_block=True,
+                    timeout_secs=5
+                )
+    
             if epsilon is None:
                 epsilon = float("-inf")
             if best_alpha is None:

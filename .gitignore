@@ -1,5 +1,6 @@
-# Ignored directories
+# Ignored directories and files
 Data/
+Tests.ipynb
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
