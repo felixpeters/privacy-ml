@@ -122,7 +122,7 @@ def train(batch_size, epochs, delta, model,
 
             
 def test(model, loss_function, torch_ref, data, labels, device):
-    """ A generic training function without batching.
+    """ A generic testing function without batching.
     
      Arguments:
         model (object): Remote or local model.
