@@ -198,7 +198,7 @@ class MedNISTDataset(torch.utils.data.Dataset):
     
     def __init__(self, data, labels, transforms, shuffle):
         self.transforms = transforms
-        self.shuffle=shuffle
+        self.shuffle = shuffle
         self.data = data
         self.labels = labels
 
